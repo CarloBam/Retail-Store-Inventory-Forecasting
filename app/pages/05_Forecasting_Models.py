@@ -11,7 +11,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from src.forecasting import (prepare_time_series, split_train_test, 
                              train_arima, predict_arima,
                              train_prophet, predict_prophet,
-                             train_lstm, predict_lstm)
+                             train_lstm, predict_lstm,
+                             walk_forward_validation)
 from src.metrics import calculate_metrics
 from src.ui_components import render_sidebar_progress, render_page_footer, simple_header
 from src.navigation import render_top_navigation
@@ -92,8 +93,9 @@ st.sidebar.header("2. Model Configuration")
 
 model_choice = st.sidebar.selectbox("Select Model", ["ARIMA", "Prophet", "RandomForest", "XGBoost", "LSTM"])
 
-test_days = st.sidebar.number_input("Test Set Size (Steps)", min_value=1, max_value=int(len(ts_agg)*0.4), value=12)
+test_ratio = st.sidebar.slider("Test Set Ratio", 0.1, 0.5, 0.2, 0.05)
 forecast_horizon = st.sidebar.number_input("Forecast Horizon (Steps)", min_value=1, value=12)
+use_walk_forward = st.sidebar.checkbox("Use Walk-Forward Validation (Robustness Check)", value=False)
 
 # Model Specific Params
 model_params = {}
@@ -141,7 +143,49 @@ elif model_choice == "LSTM":
 if st.button(f"Train {model_choice} & Forecast", type="primary"):
     
     # 1. Split
-    train, test = split_train_test(ts_agg, test_size_days=test_days)
+    train, test = split_train_test(ts_agg, test_ratio=test_ratio)
+    
+    # 2. Baselines (Naive & Seasonal Naive)
+    from src.forecasting import naive_forecast, seasonal_naive_forecast
+    
+    # Naive: Last value of train repeated
+    naive_preds = naive_forecast(train[target_col], len(test))
+    naive_metrics = calculate_metrics(test[target_col], naive_preds)
+    
+    # Seasonal Naive: Last season repeated (default 7 days for daily)
+    s_period = 7 if agg_freq == "Daily" else 4 if agg_freq == "Weekly" else 12 
+    s_naive_preds = seasonal_naive_forecast(train[target_col], len(test), period=s_period)
+    s_naive_metrics = calculate_metrics(test[target_col], s_naive_preds)
+    
+    if use_walk_forward:
+        st.info("Running Walk-Forward Validation... (This might take time)")
+        
+        # Wrapper for cross-validation
+        def wf_wrapper(train_subset, test_subset):
+             steps = len(test_subset)
+             if model_choice == "ARIMA":
+                 m, _ = train_arima(train_subset, target_col, order=model_params['order'], seasonal_order=model_params['seasonal_order'])
+                 if m: return predict_arima(m, steps)
+             elif model_choice == "Prophet":
+                 cols = model_params.get('regressors', [])
+                 m, _ = train_prophet(train_subset, target_col, regressors=cols)
+                 if m: return predict_prophet(m, periods=steps, freq=freq_map[agg_freq], future_regressors_df=test_subset)
+             elif model_choice in ["RandomForest", "XGBoost"]:
+                 from src.forecasting import train_ml_model, predict_ml
+                 m, _ = train_ml_model(train_subset, target_col, model_type=model_choice)
+                 if m: return predict_ml(m, test_subset)
+             return None
+
+        # Execute
+        wf_results = walk_forward_validation(ts_agg, target_col, wf_wrapper, n_splits=3)
+        
+        if not wf_results.empty:
+             st.dataframe(wf_results.style.format({'RMSE': '{:.2f}', 'MAE': '{:.2f}', 'MAPE': '{:.2f}'}))
+             if 'MAPE' in wf_results.columns:
+                 avg_mape = wf_results['MAPE'].mean()
+                 st.metric("Start-to-End Robustness (Avg CV MAPE)", f"{avg_mape:.2f}%")
+        else:
+             st.warning("Walk-Forward Validation produced no results.")
     
     with st.spinner(f"Training {model_choice}..."):
         model_fit = None
@@ -224,13 +268,31 @@ if st.button(f"Train {model_choice} & Forecast", type="primary"):
         else:
             # Metrics
             if predictions is not None and len(predictions) == len(test):
-                metrics = calculate_metrics(test[target_col].values, predictions)
+                model_metrics = calculate_metrics(test[target_col].values, predictions)
                 
-                st.subheader("Model Performance (Test Set)")
-                c1, c2, c3 = st.columns(3)
-                c1.metric("RMSE", f"{metrics['RMSE']:.2f}")
-                c2.metric("MAE", f"{metrics['MAE']:.2f}")
-                c3.metric("MAPE", f"{metrics['MAPE']:.2f}%")
+                st.subheader("Model Performance vs Baselines")
+                
+                # Comparison Table
+                comp_data = {
+                    "Model": [model_choice, "Naive (Last Value)", f"Seasonal Naive ({s_period}-step)"],
+                    "RMSE": [model_metrics['RMSE'], naive_metrics['RMSE'], s_naive_metrics['RMSE']],
+                    "MAE": [model_metrics['MAE'], naive_metrics['MAE'], s_naive_metrics['MAE']],
+                    "MAPE (%)": [model_metrics['MAPE'], naive_metrics['MAPE'], s_naive_metrics['MAPE']]
+                }
+                
+                # Save for Trust Report
+                st.session_state['last_model_metrics'] = comp_data
+                
+                st.dataframe(pd.DataFrame(comp_data).style.format({
+                    "RMSE": "{:.2f}", "MAE": "{:.2f}", "MAPE (%)": "{:.2f}"
+                }).highlight_min(subset=["RMSE", "MAE", "MAPE (%)"], color="lightgreen", axis=0))
+                
+                # Determine winner
+                best_mape = min(model_metrics['MAPE'], naive_metrics['MAPE'], s_naive_metrics['MAPE'])
+                if model_metrics['MAPE'] == best_mape:
+                     st.success(f"**Success!** The {model_choice} model outperforms baselines with a MAPE of {best_mape:.2f}%.")
+                elif s_naive_metrics['MAPE'] == best_mape:
+                     st.warning(f"**Note:** Seasonal Naive is the best performer ({best_mape:.2f}% MAPE). The complex model might be overfitting or needs tuning.")
             else:
                 st.warning("Could not calculate metrics (prediction length mismatch or failure).")
 
@@ -244,24 +306,65 @@ if st.button(f"Train {model_choice} & Forecast", type="primary"):
             # 2. Test Actual
             ax.plot(test.index, test[target_col], label='Test Data (Actual)', color='black')
             
-            # 3. Forecast (Validation)
+            # 3. Model Forecast (Validation)
             # Create index for predictions
             pred_idx = test.index
             if predictions is not None:
-                ax.plot(pred_idx, predictions, label='Model Forecast (Validation)', color='blue', linestyle='--')
+                ax.plot(pred_idx, predictions, label=f'{model_choice} Forecast (Validation)', color='blue', linestyle='--')
             
-            # 4. Future Forecast (if available and different)
+            # 4. Baselines
+            ax.plot(test.index, naive_preds, label='Naive Baseline', color='red', linestyle=':', alpha=0.7)
+            ax.plot(test.index, s_naive_preds, label='Seasonal Naive', color='green', linestyle=':', alpha=0.7)
+            
+            # 5. Future Forecast (if available and different)
             # This is complex to plot neatly if formats differ, let's stick to validation plot heavily
             # If we calculated 'full_forecast', plot the tail
             
-            ax.set_title(f"{model_choice} Forecast: {target_col}")
+            ax.set_title(f"{model_choice} vs Baselines: {target_col}")
             ax.legend()
             st.pyplot(fig)
             
-            # Explanation
+            # Insights
             st.markdown("---")
-            st.subheader("Model Insights")
-            if model_choice == "ARIMA":
+            st.subheader("💡 Model Insights")
+            
+            # Explainability for ML Models
+            if model_choice in ["RandomForest", "XGBoost"] and model_fit:
+                st.markdown("#### 🔍 Explainability (Drivers of Demand)")
+                st.info("⚠️ **Interpretation Note**: These importance scores reflect 'Association', not necessarily 'Causality'. High importance means the model relies heavily on this feature for prediction.")
+                
+                from src.explainability import get_feature_importance, plot_partial_dependence
+                
+                # 1. Feature Importance
+                # model_fit is the dict returned by train_ml_model containing 'model' and 'features'
+                imp_df = get_feature_importance(model_fit['model'], model_fit['features'])
+                
+                if imp_df is not None:
+                    c_imp1, c_imp2 = st.columns([1, 1])
+                    with c_imp1:
+                        st.dataframe(imp_df.head(10).style.background_gradient(cmap='Blues'), use_container_width=True)
+                    with c_imp2:
+                        # Bar chart
+                        fig_imp, ax_imp = plt.subplots(figsize=(6, 4))
+                        top_n = imp_df.head(10).sort_values('Importance', ascending=True)
+                        ax_imp.barh(top_n['Feature'], top_n['Importance'], color='#4c72b0')
+                        ax_imp.set_title("Top 10 Feature Importances")
+                        st.pyplot(fig_imp)
+                
+                # 2. Partial Dependence (PDP)
+                st.markdown("#### 📈 Partial Dependence Plots (Price Sensitivity)")
+                pdp_feats = ['effective_price', 'discount_pct', 'Price', 'Discount', 'Units Sold_lag_7']
+                # Filter strictly for existing cols
+                valid_pdp = [f for f in pdp_feats if f in train.columns]
+                
+                if valid_pdp:
+                     fig_pdp = plot_partial_dependence(model_fit['model'], train[model_fit['features']], valid_pdp[:3]) # Limit to top 3 relevant
+                     if fig_pdp:
+                         st.pyplot(fig_pdp)
+                else:
+                    st.caption("No price/discount features found for PDP plots.")
+
+            elif model_choice == "ARIMA":
                 st.info("ARIMA (AutoRegressive Integrated Moving Average) is excellent for linear trends and seasonality. It assumes data is stationary (d parameter handles this).")
             elif model_choice == "Prophet":
                 st.info("Prophet (by Meta) handles seasonality, holidays, and changepoints robustly. It is interpretable and handles outliers well, but requires good regressor data for external factors.")

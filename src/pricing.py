@@ -5,16 +5,12 @@ import statsmodels.formula.api as smf
 
 def prepare_pricing_data(df, config):
     """
-    Prepares data for pricing analysis based on config.
-    Config options:
-    - agg_level: 'Daily', 'Weekly'
-    - exclude_promo: bool
-    - correlation_threshold: int (discount depth max)
-    - product_id: optional (for single product model)
+    Prepares data for pricing analysis ensuring robust log transformations and handling zeros.
+    Separates prediction logic from structural interpretation.
     """
     df_model = df.copy()
     
-    # 1. Filter Promos
+    # 1. Filter Promos (Optional sensitivity check)
     if config.get('exclude_promo', False):
         if 'promo_flag' in df_model.columns:
             df_model = df_model[df_model['promo_flag'] == 0]
@@ -38,7 +34,7 @@ def prepare_pricing_data(df, config):
     # Define aggregation dict
     agg_dict = {
         'Units Sold': 'sum',
-        'Price': 'mean', # Weighted average ideal but mean is proxy
+        'Price': 'mean', 
         'effective_price': 'mean',
         'Discount': 'mean',
         'Competitor Pricing': 'mean'
@@ -56,29 +52,47 @@ def prepare_pricing_data(df, config):
         df_model = df_model.set_index(date_col).resample('W').agg(agg_dict).dropna().reset_index()
     
     # 5. Log Transforms
-    # Ensure positive for logs
-    # We add small epsilon or just filter > 0
-    df_model = df_model[df_model['Units Sold'] > 0]
-    
-    # Use effective price if available, else Price
+    # Handle zeros: log1p is safer for units, but for price, if 0 it's invalid.
+    # Filter invalid prices
     price_col = 'effective_price' if 'effective_price' in df_model.columns else 'Price'
     df_model = df_model[df_model[price_col] > 0]
+    
+    # Use log1p for demand to handle natural zeros (days with 0 sales)
+    # However, log(0) is -inf, log1p(0) is 0. 
+    # For elasticity: ln(Q) = beta * ln(P). If Q=0, log is undefined.
+    # Approach: Shifted log or remove zeros.
+    # Recommendation: Filter out absolute zero demand days for elasticity estimation 
+    # as they likely represent stockouts or closed stores, not price response.
+    # kept > 0 for structural estimation.
+    df_model = df_model[df_model['Units Sold'] > 0]
     
     df_model['log_demand'] = np.log(df_model['Units Sold'])
     df_model['log_price'] = np.log(df_model[price_col])
     
     return df_model
 
-def fit_elasticity_model(df, category_col='Category', fixed_effects=[], robust_cov=False):
+def _fit_log_log(sub_df, formula, fixed_effects=[]):
     """
-    Fits log-log regression.
-    Returns summary dataframe of elasticities by Category.
+    Helper to fit the model and return stats.
+    """
+    # Fixed Effects
+    for fe in fixed_effects: 
+        col_name = 'Store_ID' if fe == 'Store' and 'Store_ID' in sub_df.columns else fe
+        if col_name in sub_df.columns and sub_df[col_name].nunique() < 50:
+            formula += f" + C(Q('{col_name}'))"
+            
+    try:
+        model = smf.ols(formula=formula, data=sub_df).fit(cov_type='HC1')
+        return model
+    except:
+        return None
+
+def fit_elasticity_model(df, category_col='Category', fixed_effects=[], robust_cov=True):
+    """
+    Fits log-log regression (Structural Model).
+    Returns summary dataframe of elasticities by Category + Segments.
     """
     results = []
-    
-    # If category column exists, we fit per category for clarity in "Category Level" analysis
-    # Alternatively, we could run one big pooled model with interaction terms, 
-    # but per-category models are cleaner to read and often preferred in simple business dashboards.
     
     categories = df[category_col].unique() if category_col in df.columns else ['All']
     
@@ -88,44 +102,58 @@ def fit_elasticity_model(df, category_col='Category', fixed_effects=[], robust_c
         else:
             sub_df = df[df[category_col] == cat]
             
-        if len(sub_df) < 10:
+        if len(sub_df) < 20: 
             continue
             
-        # Formula Construction
-        # Basic: log_demand ~ log_price
-        formula = "log_demand ~ log_price"
+        # Base Formula
+        base_formula = "log_demand ~ log_price"
         
         # Controls
-        controls = ['promo_flag', 'Holiday', 'discount_pct', 'Month']
-        for c in controls:
-            if c in sub_df.columns:
-                # Check for variance
-                if sub_df[c].nunique() > 1:
-                    formula += f" + {c}"
+        controls = ['Holiday', 'Seasonality', 'Month', 'weather_cluster'] # removed promo_flag from base controls if we segment by it? No, keep for overall.
+        # Actually for overall model we need promo_flag
+        overall_formula = base_formula
+        control_vars = []
+        possible_controls = ['promo_flag', 'Holiday', 'discount_pct', 'Month', 'Seasonality']
+        for c in possible_controls:
+            if c in sub_df.columns and sub_df[c].nunique() > 1:
+                control_vars.append(c)
+                overall_formula += f" + {c}"
         
-        # Fixed Effects (Store, Product)
-        # Using C() for categorical
-        for fe in fixed_effects: 
-            # Check column existence and cardinality (avoid exploding model)
-            col_name = 'Store_ID' if fe == 'Store' and 'Store_ID' in sub_df.columns else fe
-            if col_name in sub_df.columns and sub_df[col_name].nunique() < 50: # Cap for feasibility
-                formula += f" + C(Q('{col_name}'))" # Q() handles spaces
-                
-        try:
-            # Fit
-            if robust_cov:
-                # HC1 or cluster? 'cluster' requires groups
-                # Let's default to HC1 for robustness without group complexity in UI unless specified
-                model = smf.ols(formula=formula, data=sub_df).fit(cov_type='HC1')
-            else:
-                model = smf.ols(formula=formula, data=sub_df).fit()
-            
-            # Extract Elasticity (coeff of log_price)
+        # 1. Overall Model
+        model = _fit_log_log(sub_df, overall_formula, fixed_effects)
+        
+        if model:
             elas = model.params['log_price']
             pval = model.pvalues['log_price']
             ci = model.conf_int().loc['log_price']
+            r2 = model.rsquared
             
-            # Interpretation
+            # 2. Segmented Analysis (Promo vs Non-Promo)
+            elas_promo = np.nan
+            elas_no_promo = np.nan
+            
+            if 'promo_flag' in sub_df.columns:
+                # Non-Promo
+                df_no = sub_df[sub_df['promo_flag'] == 0]
+                if len(df_no) > 20:
+                    # Remove promo_flag from controls for this segment
+                    seg_formula = base_formula
+                    for c in [x for x in control_vars if x != 'promo_flag']:
+                         if df_no[c].nunique() > 1: seg_formula += f" + {c}"
+                    
+                    m_no = _fit_log_log(df_no, seg_formula, fixed_effects)
+                    if m_no: elas_no_promo = m_no.params['log_price']
+                
+                # Promo
+                df_yes = sub_df[sub_df['promo_flag'] == 1]
+                if len(df_yes) > 20:
+                    seg_formula = base_formula
+                    for c in [x for x in control_vars if x != 'promo_flag']:
+                         if df_yes[c].nunique() > 1: seg_formula += f" + {c}"
+                    
+                    m_yes = _fit_log_log(df_yes, seg_formula, fixed_effects)
+                    if m_yes: elas_promo = m_yes.params['log_price']
+            
             interp = interpret_elasticity(elas, pval)
             
             results.append({
@@ -134,13 +162,70 @@ def fit_elasticity_model(df, category_col='Category', fixed_effects=[], robust_c
                 'P-Value': pval,
                 'CI_Lower': ci[0],
                 'CI_Upper': ci[1],
-                'R-Squared': model.rsquared,
+                'R-Squared': r2,
                 'Obs': int(model.nobs),
-                'Interpretation': interp
+                'Interpretation': interp,
+                'Elas_No_Promo': elas_no_promo,
+                'Elas_Promo': elas_promo,
+                'Controls': ", ".join(control_vars)
             })
             
-        except Exception as e:
-            # print(f"Error fitting {cat}: {e}")
+    return pd.DataFrame(results)
+
+def run_placebo_test(df, category_col='Category'):
+    """
+    Placebo Test: Does Future Price predict Current Demand?
+    If significant, implies endogeneity (anticipation or trend confounding).
+    """
+    results = []
+    categories = df[category_col].unique() if category_col in df.columns else ['All']
+    
+    # Needs date sorting
+    if 'Date' in df.columns:
+        df = df.sort_values('Date')
+        
+    for cat in categories:
+        sub_df = df if cat == 'All' else df[df[category_col] == cat]
+        sub_df = sub_df.copy() # Avoid SettingWithCopy
+        
+        # Create Lead Price (Future Price)
+        # We need to group by product/store to shift correctly if mixed
+        # Assuming prepare_pricing_data output might be aggregated.
+        # If it's Store-Product grain:
+        if 'Store ID' in sub_df.columns and 'Product ID' in sub_df.columns:
+            sub_df['future_log_price'] = sub_df.groupby(['Store ID', 'Product ID'])['log_price'].shift(-1)
+        else:
+            # Aggregate or single series
+            sub_df['future_log_price'] = sub_df['log_price'].shift(-1)
+            
+        sub_df = sub_df.dropna(subset=['log_demand', 'future_log_price', 'log_price'])
+        
+        if len(sub_df) < 20: continue
+        
+        # Regress log_demand ~ log_price + future_log_price + controls
+        formula = "log_demand ~ log_price + future_log_price"
+        for c in ['Holiday', 'Month', 'promo_flag']:
+            if c in sub_df.columns and sub_df[c].nunique() > 1:
+                formula += f" + {c}"
+                
+        try:
+            model = smf.ols(formula=formula, data=sub_df).fit(cov_type='HC1')
+            
+            # Check significance of future_log_price
+            placebo_coef = model.params['future_log_price']
+            placebo_pval = model.pvalues['future_log_price']
+            
+            flag = "FAIL" if placebo_pval < 0.05 else "PASS"
+            msg = "Significant Future Price Effect (Possible Endogeneity)" if placebo_pval < 0.05 else "No Future Price Effect detected."
+            
+            results.append({
+                'Category': cat,
+                'Placebo_Coef': placebo_coef,
+                'Placebo_PVal': placebo_pval,
+                'Status': flag,
+                'Message': msg
+            })
+        except:
             pass
             
     return pd.DataFrame(results)
@@ -152,10 +237,8 @@ def fit_competitor_model(df):
     if 'price_gap_to_competitor' not in df.columns:
         return None, "Feature 'price_gap_to_competitor' missing."
         
-    # Formula
     formula = "Q('Units Sold') ~ price_gap_to_competitor"
     
-    # Clean data
     df_clean = df.dropna(subset=['Units Sold', 'price_gap_to_competitor'])
     if len(df_clean) < 10:
         return None, "Insufficient data."
@@ -168,13 +251,13 @@ def fit_competitor_model(df):
 
 def interpret_elasticity(coef, pval):
     if pval > 0.05:
-        return "Insignificant (No clear price effect)"
+        return "Insignificant / No clear association"
     if coef < -1:
-        return "Elastic (Revenue increases with Price Cut)"
+        return "Elastic (Price Cut -> Revenue UP)"
     elif coef > -1 and coef < 0:
-        return "Inelastic (Revenue increases with Price Hike)"
+        return "Inelastic (Price Hike -> Revenue UP)"
     elif coef > 0:
-        return "Positive (Giffen/Veblen-like or Confounded)"
+        return "Positive Association (Review Controls)" # Warning flag
     else:
         return "Unit Elastic"
 
@@ -183,7 +266,6 @@ def calculate_what_if(elasticity, current_price, current_units, pct_change):
     Calculates expected impact.
     pct_change is in percent (e.g. -10 for 10% drop)
     """
-    # % Change in Q = Elasticity * % Change in P
     pct_change_decimal = pct_change / 100.0
     expected_pct_change_units = elasticity * pct_change_decimal
     

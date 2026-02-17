@@ -85,19 +85,109 @@ def prepare_time_series(df, date_col, target_col, agg_freq='D', store_col=None, 
     except Exception as e:
         return None, f"Aggregation error: {e}"
 
-def split_train_test(ts, test_size_days=30):
+def split_train_test(ts, test_ratio=0.2):
     """
-    Splits time series by Date.
+    Splits time series by Date using a strict time-based cutoff.
+    Default is 80% train, 20% test.
     """
-    if len(ts) <= test_size_days:
-        # Fallback if series is too short
-        split_idx = int(len(ts) * 0.8)
-    else:
-        split_idx = len(ts) - test_size_days
+    n = len(ts)
+    split_idx = int(n * (1 - test_ratio))
+    
+    # Ensure we have enough data
+    if split_idx < 1:
+        split_idx = 1
         
     train = ts.iloc[:split_idx]
     test = ts.iloc[split_idx:]
     return train, test
+
+def walk_forward_validation(ts, target_col, model_func, n_splits=3):
+    """
+    Performs walk-forward validation (Time Series Cross Validation).
+    
+    Args:
+        ts: Time series dataframe
+        target_col: Target column name
+        model_func: Function to train model and return forecast (train_df, steps) -> predictions
+        n_splits: Number of folds
+        
+    Returns:
+        Dictionary of metrics per fold
+    """
+    from sklearn.model_selection import TimeSeriesSplit
+    
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    metrics = []
+    
+    X = ts.index # Just for splitting index purpose
+    
+    fold = 1
+    for train_index, test_index in tscv.split(X):
+        train = ts.iloc[train_index]
+        test = ts.iloc[test_index]
+        
+        if len(test) < 1: continue
+        
+        # Train and Predict
+        # Note: model_func needs to be a wrapper that fits and predicts
+        # This is a template for the extensive implementation
+        if len(test) < 1: continue
+        
+        # Train and Predict
+        # model_func should take (train_df, test_df) and return predictions (Series or array)
+        try:
+            predictions = model_func(train, test)
+            
+            if predictions is not None and len(predictions) == len(test):
+                from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
+                
+                real = test[target_col].values
+                rmse = np.sqrt(mean_squared_error(real, predictions))
+                mae = mean_absolute_error(real, predictions)
+                mape = mean_absolute_percentage_error(real, predictions) * 100
+                
+                metrics.append({
+                    'fold': fold,
+                    'train_end': train.index.max(),
+                    'test_start': test.index.min(),
+                    'test_end': test.index.max(),
+                    'RMSE': rmse,
+                    'MAE': mae,
+                    'MAPE': mape
+                })
+            else:
+                metrics.append({'fold': fold, 'error': 'Prediction failure'})
+                
+        except Exception as e:
+            metrics.append({'fold': fold, 'error': str(e)})
+            
+        fold += 1
+        
+    return pd.DataFrame(metrics)
+        
+def naive_forecast(train_series, steps):
+    """
+    Returns the last observed value from training repeated 'steps' times.
+    """
+    last_val = train_series.iloc[-1]
+    return pd.Series([last_val] * steps, index=pd.RangeIndex(start=0, stop=steps))
+
+def seasonal_naive_forecast(train_series, steps, period=7):
+    """
+    Returns the last observed value from the same season/period.
+    Example: Forecast next Monday using last Monday's value.
+    This logic repeats the last 'period' observations.
+    """
+    if len(train_series) < period:
+        return naive_forecast(train_series, steps)
+        
+    last_season = train_series.iloc[-period:].values
+    # Tile the last season to cover steps
+    repetitions = int(np.ceil(steps / period))
+    forecast_values = np.tile(last_season, repetitions)[:steps]
+    
+    return forecast_values
+
 
 # --- Models ---
 
@@ -158,11 +248,84 @@ def predict_prophet(model, periods, freq='D', future_regressors_df=None):
         
         # Merge regressors if needed
         if future_regressors_df is not None:
-             # Merge or use passed regressor dataframe directly if indices align
-             pass
+             # future df has column 'ds'. future_regressors_df (test set) has date index.
+             # We need to map values.
+             # Simplest: future has length len(train) + periods.
+             # But predict() needs values for ALL rows in future, including history?
+             # Prophet predict() usually just needs rows for which we want predictions, BUT make_future_dataframe includes history by default.
+             # If we only want forecast tail:
+             # But model.predict() output corresponds to future's rows.
+             
+             # Align future_regressors_df to future['ds']
+             # Assuming future_regressors_df index is date
+             
+             # Create a lookup
+             reg_df = future_regressors_df.sort_index()
+             
+             # We only need to fill the future part (the tail) because history is already known?
+             # actually Prophet expects regressor columns to be present for ALL rows in 'future'.
+             # For history rows, we assume we don't strictly need them to re-predict history if we only care about tail
+             # BUT Prophet validation might strict check column presence.
+             
+             # Strategy: Left join future with reg_df on date
+             # Note: This implies we have regressor values for the *entire* future period specificed.
+             # In our UI, we use "test" set as future_regressors, which exactly covers the "periods" we ask for.
+             # Checks:
+             freq_str = freq # e.g. 'D'
+             
+             for col in future_regressors_df.columns:
+                 # Check if this col is a regressor in the model
+                 if col in model.extra_regressors:
+                     # We need to map it.
+                     # Create a series series indexed by date
+                     # Regressors might need to be filled for history too?
+                     # Prophet stores history regressors. It might handle missing 'future' history regressors if we only look at yhat?
+                     # No, predict() throws error if columns missing.
+                     # Workaround: Initialize col with 0 or NaN
+                     future[col] = 0.0 # Default
+                     
+                     # Fill from future_regressors_df (Test set)
+                     # Map ds to index
+                     # Iterate or map? Map is faster.
+                     # future['ds'] is datetime.
+                     
+                     # Create mapping dict
+                     # Note: future_regressors_df only covers the TEST period.
+                     # We need values for history too if make_future_dataframe includes history (default include_history=True).
+                     # The UI calls predict_prophet with periods=len(test).
+                     # To avoid issues with missing history regressors, we can turn off history in make_future_dataframe?
+                     # But Prophet relies on history for limits?
+                     
+                     # Better approach: We can't easily reconstruct history regressors inside this function unless passed.
+                     # HOWEVER, we can usually predict using just the "future" dataframe starting from now if we simply build it manually 
+                     # instead of using make_future_dataframe which includes history.
+                     
+                     pass
+        
+        # New robust logic:
+        # 1. Create future frame EXACTLY for the periods we want (Test set).
+        # We don't need history for this specific prediction task (Validation).
+        
+        if future_regressors_df is not None:
+            # Check coverage
+            # If future_regressors_df has the dates we need, use its index
+            # Expecting future_regressors_df to be the 'test' dataframe with Date index
+            future_dates = future_regressors_df.index
+            future = pd.DataFrame({'ds': future_dates})
+            
+            # Add regressors
+            for reg in model.extra_regressors:
+                if reg in future_regressors_df.columns:
+                    future[reg] = future_regressors_df[reg].values
+                else:
+                    future[reg] = 0.0 # Fallback
+        else:
+            # Fallback for no regressors
+            future = model.make_future_dataframe(periods=periods, freq=freq, include_history=False)
         
         forecast = model.predict(future)
-        return forecast['yhat'].tail(periods)
+        # forecast contains 'ds', 'yhat', etc.
+        return forecast['yhat'] # Returns series corresponding to future inputs
     except Exception as e:
         print(f"Prophet predict error: {e}")
         return None

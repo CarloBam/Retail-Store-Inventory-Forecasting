@@ -112,7 +112,32 @@ if st.button("Generate Features 🚀", type="primary"):
             with st.expander("📋 New Features List"):
                 new_feature_names = [c for c in df_feat.columns if c not in df.columns]
                 st.write(new_feature_names)
-            
+
+            # 4. Feature Contract & QA Dashboard
+            with st.expander("🛡️ Feature Contract & QA Report", expanded=True):
+                st.markdown("#### 1. Price Feature Integrity")
+                if 'price_gap_to_competitor' in df_feat.columns:
+                    st.success("✅ `price_gap_to_competitor` successfully created.")
+                else:
+                    st.warning("⚠️ `price_gap_to_competitor` MISSING. Competitor models will be disabled.")
+                    st.caption("Check if 'Competitor Pricing' column exists in source data.")
+                
+                if 'effective_price' in df_feat.columns:
+                    st.success("✅ `effective_price` successfully created.")
+                
+                st.markdown("#### 2. Lag/Rolling Warm-up Check")
+                # Check for nulls in lag cols
+                lag_cols = [c for c in df_feat.columns if '_lag_' in c or '_roll_' in c]
+                if lag_cols:
+                    nulls_in_lags = df_feat[lag_cols].isnull().sum().sum()
+                    if nulls_in_lags == 0:
+                        st.success(f"✅ Warm-up period handled. 0 nulls across {len(lag_cols)} lag/rolling features.")
+                    else:
+                        st.error(f"❌ Found {nulls_in_lags} nulls in lag features. Warm-up drop might have failed.")
+                        st.dataframe(df_feat[lag_cols].isnull().sum().to_frame("Null Count").T)
+                else:
+                    st.info("No lag features requested.")
+
             render_page_footer("EDA", "04_EDA", "Features generated. Ready for analysis.")
                 
         except Exception as e:

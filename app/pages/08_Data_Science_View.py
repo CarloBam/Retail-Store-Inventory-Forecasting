@@ -248,4 +248,4 @@ with st.expander("🛠️ Debug: Session State & System Info"):
     if 'cleaned_data' in st.session_state:
         st.write(f"Cleaned Data Shape: {st.session_state['cleaned_data'].shape}")
 
-render_page_footer("Home", "Home", "End of pipeline. Return Home.")
+render_page_footer("Trust & QA Report", "09_Trust_Report", "Verify pipeline integrity.")

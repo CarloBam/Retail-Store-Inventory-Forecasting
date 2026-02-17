@@ -78,12 +78,13 @@ with st.spinner("Fitting Regression Models..."):
     
     if not elasticity_df.empty:
         # Display Table
-        st.dataframe(elasticity_df.style.format({
-            "Elasticity": "{:.2f}", 
+        st.dataframe(elasticity_df[['Category', 'Elasticity', 'Elas_No_Promo', 'Elas_Promo', 'P-Value', 'CI_Lower', 'CI_Upper', 'Interpretation', 'Robustness']].style.format({
+            "Elasticity": "{:.2f}",
+            "Elas_No_Promo": "{:.2f}",
+            "Elas_Promo": "{:.2f}",
             "P-Value": "{:.4f}",
             "CI_Lower": "{:.2f}", 
-            "CI_Upper": "{:.2f}",
-            "R-Squared": "{:.2f}"
+            "CI_Upper": "{:.2f}"
         }).background_gradient(subset=['Elasticity'], cmap="RdYlGn", vmin=-3, vmax=0), use_container_width=True)
         
         # Rank Plot
@@ -101,7 +102,6 @@ with st.spinner("Fitting Regression Models..."):
         ax.axvline(x=-1, color='red', linestyle='--', label='Unit Elastic (-1)')
         ax.set_title("Price Elasticity with 95% CI")
         ax.legend()
-        
         st.pyplot(fig)
         
     else:
@@ -111,6 +111,8 @@ with st.spinner("Fitting Regression Models..."):
 st.markdown("---")
 st.header("2. Revenue Simulator (What-If)")
 
+st.warning("⚠️ **Endogeneity Warning**: These estimates capture 'Association', not strict 'Causality'. Prices often drop when demand is low (Clearance), which can bias elasticity towards 0. Use as a directional guide.")
+
 c_sim1, c_sim2 = st.columns(2)
 
 with c_sim1:
@@ -118,6 +120,8 @@ with c_sim1:
         sim_cat = st.selectbox("Select Category to Simulate", elasticity_df['Category'].unique())
         
         # Get baseline stats for that category
+        # Recalculate based on prepared data model not full raw
+        # Actually logic is fine as approximation
         base_df = df_model[df_model['Category'] == sim_cat] if 'Category' in df_model.columns else df_model
         curr_price = base_df['Price'].mean()
         curr_units = base_df['Units Sold'].mean() # Average per period (Day/Week)
@@ -135,9 +139,10 @@ with c_sim2:
     pct_change_input = st.slider("Proposed Price Change (%)", -50, 50, 0)
     
     if pct_change_input != 0:
+        # Pass elasticity 
         sim_res = calculate_what_if(model_elast, curr_price, curr_units, pct_change_input)
         
-        m1, m2, m3 = st.columns(3)
+        m1, m2 = st.columns(2)
         m1.metric("Predicted Demand Vol", f"{sim_res['Units Change %']:.1f}%", delta_color="normal")
         m2.metric("Predicted Revenue", f"{sim_res['Revenue Change %']:.1f}%", delta_color="normal")
         
@@ -179,5 +184,26 @@ if 'price_gap_to_competitor' in df.columns:
         st.warning(f"Could not fit competitor model: {err}")
 else:
     st.info("No competitor pricing data found (Feature 'price_gap_to_competitor').")
+
+# --- 4. Robustness Checks (Placebo) ---
+st.markdown("---")
+st.header("4. Robustness Checks (Advanced)")
+with st.expander("Diagnostics: Placebo & Endogeneity Tests", expanded=True):
+    from src.pricing import run_placebo_test
+    
+    st.write("**Placebo Test**: We regress current demand on *Future Price*. In a causal world, future prices should NOT affect past sales. If they do, it suggests 'Endogeneity' (e.g. users anticipating sales, or managers setting prices based on expected trend).")
+    
+    placebo_res = run_placebo_test(df_model, category_col='Category')
+    
+    if not placebo_res.empty:
+        st.dataframe(placebo_res.style.apply(lambda x: ['background-color: #ffcccc' if v == 'FAIL' else '' for v in x], subset=['Status']), use_container_width=True)
+        
+        fails = placebo_res[placebo_res['Status'] == 'FAIL']
+        if not fails.empty:
+            st.warning(f"⚠️ Potential endogeneity detected in {len(fails)} categories. Interpretation of causality should be cautious.")
+        else:
+            st.success("✅ Placebo test passed. No significant trend confounding detected.")
+    else:
+        st.info("Insufficient data for placebo test.")
 
 render_page_footer("Recommendations", "07_Outputs_and_Recommendations", "Pricing analyzed. Next: See Executive Recommendations.")
