@@ -12,6 +12,8 @@ Retailers face a dual challenge: avoiding stockouts while maximizing revenue thr
 
 The solution is delivered as an interactive Streamlit web application, allowing non-technical stakeholders to explore data, run scenarios ("What-If analysis"), and export executive recommendations.
 
+![Project Architecture](assets/project_architecture.png)
+
 ## 2. Dataset Description
 The system is built to ingest standard retail transaction logs.
 
