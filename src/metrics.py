@@ -5,6 +5,9 @@ def calculate_metrics(y_true, y_pred):
     """
     Calculates common regression metrics: RMSE, MAE, MAPE.
     """
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    
     mse = metrics.mean_squared_error(y_true, y_pred)
     rmse = np.sqrt(mse)
     mae = metrics.mean_absolute_error(y_true, y_pred)

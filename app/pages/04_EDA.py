@@ -140,7 +140,7 @@ with tab1:
         else:
              fig2 = plot_sales_trends(df_filtered, date_col=date_col, value_col='Revenue', title="Daily Revenue (Est)", log_scale=log_scale)
              
-        st.pyplot(fig2)
+        st.plotly_chart(fig2, use_container_width=True)
         
     st.markdown("---")
     
@@ -149,7 +149,7 @@ with tab1:
          st.subheader("Top Categories by Revenue")
          if 'Category' in df_filtered.columns:
              fig3 = plot_top_categories(df_filtered, cat_col='Category', value_col='Revenue', n=10)
-             st.pyplot(fig3)
+             st.plotly_chart(fig3, use_container_width=True)
              if st.button("💾 Save Categories", key="btn_save_cat"):
                 path = save_plot(fig3, "slide3_top_categories.png")
                 st.toast(f"Saved to {path}", icon="✅")
@@ -161,7 +161,7 @@ with tab1:
          prod_col = 'Product Name' if 'Product Name' in df_filtered.columns else 'Product ID'
          if prod_col in df_filtered.columns:
              fig4 = plot_top_categories(df_filtered, cat_col=prod_col, value_col='Units Sold', n=10, title="Top Selling Products")
-             st.pyplot(fig4)
+             st.plotly_chart(fig4, use_container_width=True)
 
 # TAB 2: Segmentation
 with tab2:
@@ -169,7 +169,7 @@ with tab2:
     
     if region_col in df_filtered.columns and cat_col in df_filtered.columns:
         fig_heat = plot_heatmap_pivot(df_filtered, index_col=region_col, columns_col=cat_col, value_col='Units Sold', title=f"Avg Units Sold by {region_col} & {cat_col}")
-        st.pyplot(fig_heat)
+        st.plotly_chart(fig_heat, use_container_width=True)
     else:
         st.warning(f"Need '{region_col}' and '{cat_col}' columns for heatmap.")
         
@@ -181,13 +181,13 @@ with tab2:
         st.markdown("**Price Distribution by Category**")
         if cat_col in df_filtered.columns:
             fig_dist = plot_distribution(df_filtered, col='Price', by_col='Category', title="Price Boxplot by Category")
-            st.pyplot(fig_dist)
+            st.plotly_chart(fig_dist, use_container_width=True)
             
     with d2:
         st.markdown("**Discount Distribution**")
         if 'Discount' in df_filtered.columns:
             fig_hist = plot_distribution(df_filtered, col='Discount', title="Discount Histogram")
-            st.pyplot(fig_hist)
+            st.plotly_chart(fig_hist, use_container_width=True)
 
 # TAB 3: Promo & Pricing
 with tab3:
@@ -200,7 +200,7 @@ with tab3:
         st.subheader("Promo Impact")
         if promo_col:
             fig_promo = plot_promo_effect(df_filtered, promo_col, value_col='Units Sold', title="Avg Units Sold: Promo vs Non-Promo")
-            st.pyplot(fig_promo)
+            st.plotly_chart(fig_promo, use_container_width=True)
             st.caption(f"Using '{promo_col}' as promotion indicator.")
         else:
             st.warning("No promo flag found (Feature Engineering step recommended).")
@@ -218,7 +218,7 @@ with tab3:
         
         if len(scatter_data) > 0:
             fig_scat = plot_scatter_fit(scatter_data, x_col=price_var, y_col='Units Sold', title=f"Price vs Demand ({target_cat_scatter or 'All'})")
-            st.pyplot(fig_scat)
+            st.plotly_chart(fig_scat, use_container_width=True)
             if st.button("💾 Save Elasticity Plot", key="btn_save_scat"):
                 path = save_plot(fig_scat, "slide5_elasticity_scatter.png")
                 st.toast(f"Saved to {path}", icon="✅")
@@ -229,7 +229,7 @@ with tab3:
     st.subheader("Competitor Analysis")
     if 'price_gap_to_competitor' in df_filtered.columns:
         fig_comp = plot_scatter_fit(df_filtered, x_col='price_gap_to_competitor', y_col='Units Sold', title="Competitor Price Gap vs Demand")
-        st.pyplot(fig_comp)
+        st.plotly_chart(fig_comp, use_container_width=True)
     else:
         st.info("Feature 'price_gap_to_competitor' not found. Perform Feature Engineering first.")
 

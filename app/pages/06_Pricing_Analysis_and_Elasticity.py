@@ -78,7 +78,7 @@ with st.spinner("Fitting Regression Models..."):
     
     if not elasticity_df.empty:
         # Display Table
-        st.dataframe(elasticity_df[['Category', 'Elasticity', 'Elas_No_Promo', 'Elas_Promo', 'P-Value', 'CI_Lower', 'CI_Upper', 'Interpretation', 'Robustness']].style.format({
+        st.dataframe(elasticity_df[['Category', 'Elasticity', 'Elas_No_Promo', 'Elas_Promo', 'P-Value', 'CI_Lower', 'CI_Upper', 'Interpretation']].style.format({
             "Elasticity": "{:.2f}",
             "Elas_No_Promo": "{:.2f}",
             "Elas_Promo": "{:.2f}",
