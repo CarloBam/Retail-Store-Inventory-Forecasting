@@ -92,6 +92,46 @@ def create_ppt_presentation(df, insights, recommendations):
         p.level = 1
         p.font.bold = True
 
+    # 2.5 Key Findings Slide
+    slide_layout = prs.slide_layouts[1]
+    slide = prs.slides.add_slide(slide_layout)
+    slide.shapes.title.text = "Key Findings"
+    
+    tf = slide.placeholders[1].text_frame
+    tf.text = "" # Clear default
+    
+    # Inelastic
+    p = tf.add_paragraph()
+    p.text = "Inelastic Categories:"
+    p.font.bold = True
+    p.level = 0
+    
+    if 'top_inelastic' in insights and not insights['top_inelastic'].empty:
+        cats = ", ".join(insights['top_inelastic']['Category'].tolist()[:3])
+        p = tf.add_paragraph()
+        p.text = f"- {cats}"
+        p.level = 1
+    else:
+        p = tf.add_paragraph()
+        p.text = "- None"
+        p.level = 1
+
+    # Elastic
+    p = tf.add_paragraph()
+    p.text = "Elastic Categories:"
+    p.font.bold = True
+    p.level = 0
+    
+    if 'top_elastic' in insights and not insights['top_elastic'].empty:
+        cats = ", ".join(insights['top_elastic']['Category'].tolist()[:3])
+        p = tf.add_paragraph()
+        p.text = f"- {cats}"
+        p.level = 1
+    else:
+        p = tf.add_paragraph()
+        p.text = "- None"
+        p.level = 1
+
     # 3. Sales Trends Slide
     fig_trend = plot_sales_trends_static(df, title="Sales Performance Over Time")
     add_chart_slide("Sales Trends", fig_trend, "The chart illustrates seasonal peaks and overall volume trajectory. Analyze December spikes for inventory planning.")
@@ -134,9 +174,9 @@ def create_ppt_presentation(df, insights, recommendations):
              classification = "Elastic (Sensitive)" if data['Elasticity'] < -1 else "Inelastic (Sticky)"
              table.cell(r, 2).text = classification
 
-    # 6. Strategic Recommendations
+    # 6. Top Recommendations
     slide = prs.slides.add_slide(prs.slide_layouts[1])
-    slide.shapes.title.text = "Strategic Recommendations"
+    slide.shapes.title.text = "Top Recommendations"
     content = slide.placeholders[1].text_frame
     content.text = "Proposed Actions based on Data:"
     
