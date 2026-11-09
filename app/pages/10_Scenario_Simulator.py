@@ -17,7 +17,7 @@ from src.pricing import fit_elasticity_model, prepare_pricing_data
 st.set_page_config(page_title="Scenario Simulator", layout="wide", page_icon="🧮")
 
 # Top Nav
-render_top_navigation("Experiments", "12_Experimentation_Roadmap", 
+render_top_navigation("Experiments", "11_Experimentation_Roadmap",
                       can_proceed=True,
                       warning_msg="Define next steps.")
 
@@ -200,5 +200,5 @@ if rev_diff > 0:
 else:
     st.error(f"**Outcome**: This scenario is projected to lose **${abs(rev_diff):,.0f}** in revenue relative to baseline.")
 
-render_page_footer("Experiments", "12_Experimentation_Roadmap", "Design tests to validate this.")
+render_page_footer("Experiments", "11_Experimentation_Roadmap", "Design tests to validate this.")
 

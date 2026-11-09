@@ -16,7 +16,7 @@ from src.navigation import render_top_navigation
 st.set_page_config(page_title="Experimentation Roadmap", layout="wide", page_icon="🧪")
 
 # Top Nav
-render_top_navigation("Data Dictionary", "11_Data_Dictionary", can_proceed=True)
+render_top_navigation("Data Dictionary", "12_Data_Dictionary", can_proceed=True)
 
 render_sidebar_progress()
 simple_header("Experimentation & Causal Inference Roadmap", "🧪")
@@ -106,4 +106,4 @@ with tab3:
     st.write("**Use Case:** When an intervention is assigned based on a strict cutoff (e.g., 'Stores with >1000 sqft get the promo').")
     st.write("**Method:** Compare stores just above (1001 sqft) and just below (999 sqft) the cutoff. They are likely very similar, so any jump in sales at the cutoff is causal.")
 
-render_page_footer("Data Dictionary", "11_Data_Dictionary", "View full definitions.")
+render_page_footer("Data Dictionary", "12_Data_Dictionary", "View full definitions.")

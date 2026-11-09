@@ -27,6 +27,19 @@ Welcome to the data ingestion module. Here you can load the retail dataset.
 The system will automatically parse dates and coerce numeric types.
 """)
 
+def load_and_store_data(file_source):
+    df_temp = load_data(file_source)
+    if df_temp is None:
+        return None
+
+    df_parsed = parse_and_load_data(df_temp)
+    if 'Date' in df_parsed.columns and pd.api.types.is_datetime64_any_dtype(df_parsed['Date']):
+        st.caption("✅ Date column parsed successfully.")
+
+    st.session_state['raw_data'] = df_parsed
+    st.session_state['df_raw'] = df_parsed
+    return df_parsed
+
 # --- Sidebar ---
 st.sidebar.header("Configuration")
 # Train / Validation Split
@@ -39,6 +52,8 @@ st.subheader("1. Import Data")
 # State Management for Data Persistance
 # If data is already loaded, show current status and option to reset
 if st.session_state.get('raw_data') is not None:
+    if st.session_state.pop('sample_dataset_loaded', False):
+        st.success("Sample dataset loaded. Continue to Data Quality and Cleaning.")
     st.info(f"✅ Data is currently loaded ({st.session_state['raw_data'].shape[0]} rows).")
     
     col_r1, col_r2 = st.columns([1, 4])
@@ -53,28 +68,24 @@ if st.session_state.get('raw_data') is not None:
 
 else:
     # Only show uploader if no data is loaded
+    sample_data_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'retail_store_inventory.csv'))
+    if st.button("Load sample dataset (Kaggle, synthetic)", type="primary"):
+        with st.spinner("Loading sample dataset..."):
+            df_parsed = load_and_store_data(sample_data_path)
+            if df_parsed is not None:
+                st.session_state['sample_dataset_loaded'] = True
+                st.rerun()
+
     uploaded_file = st.file_uploader("Upload your Retail Inventory CSV", type=['csv'])
     
     df_parsed = None
     
     if uploaded_file is not None:
         with st.spinner("Reading uploaded file..."):
-            df_temp = load_data(uploaded_file)
-            
-            if df_temp is not None:
-                # Parse Data
-                with st.spinner("Parsing and verifying data types..."):
-                    df_parsed = parse_and_load_data(df_temp)
-                    # Verify parsing happened
-                    if 'Date' in df_parsed.columns and pd.api.types.is_datetime64_any_dtype(df_parsed['Date']):
-                         st.caption("✅ Date column parsed successfully.")
-                    
-                    # Compute initial missingness for summary
-                    # Save the parsed upload so it persists across Streamlit reruns.
-                    st.session_state['raw_data'] = df_parsed
-                    st.session_state['df_raw'] = df_parsed
+            with st.spinner("Parsing and verifying data types..."):
+                df_parsed = load_and_store_data(uploaded_file)
+                if df_parsed is not None:
                     st.toast("Upload successful!", icon="✅")
-                    # Rerun to switch to "Loaded" view
                     st.rerun()
 
 # 2. Process & Preview (Only if data exists)

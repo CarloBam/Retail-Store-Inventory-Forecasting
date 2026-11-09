@@ -60,4 +60,4 @@ out_data = [
 ]
 st.table(pd.DataFrame(out_data))
 
-render_page_footer("Home", "Hello", "Refrence complete.")
+render_page_footer("Home", "Home", "Refrence complete.")

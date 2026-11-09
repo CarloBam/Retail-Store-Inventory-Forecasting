@@ -24,7 +24,7 @@ st.markdown("""
 
 **Business Goal:** Understand how **price changes affect demand** across product categories and optimize inventory levels to maximize profitability while maintaining service levels.
 
-**Data Source:** [Retail Store Inventory Forecasting Dataset (Kaggle)](https://github.com/aliasgar-saria/Retail-Store-Inventory-Forecasting---Demand-Inventory-Optimization-Dynamic-Pricing)
+**Data Source:** [Retail Store Inventory Forecasting Dataset (Kaggle)](https://www.kaggle.com/datasets/anirudhchauhan/retail-store-inventory-forecasting-dataset) · synthetic
 
 #### Workflow & Models:
 1. **Data Upload**: Load and validate your CSV data.
@@ -38,6 +38,7 @@ st.markdown("""
 6. **Pricing Analysis**: Estimate Price Elasticity to simulate revenue under different pricing strategies.
 
 #### Getting Started
+No data? Use the sample dataset button on the Data Upload page.
 Click the button below to begin importing your data.
 """)
 
