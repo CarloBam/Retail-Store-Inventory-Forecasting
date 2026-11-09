@@ -89,7 +89,7 @@ c1, c2 = st.columns(2)
 with c1:
     st.markdown("### 🏗️ Assumptions")
     st.markdown("""
-    1. **Functional Form**: We assume the relationship is linear in logs. A 10% price drop has the same relative impact whether price is \$10 or \$100.
+    1. **Functional Form**: We assume the relationship is linear in logs. A 10% price drop has the same relative impact whether price is \\$10 or \\$100.
     2. **Independence**: We assume daily sales errors are independent (unless we use robust errors/Clustering). In reality, demand has temporal memory.
     3. **Exogeneity**: We assume Price is set independently of the error term. If we crash prices *because* we know demand will be low (clearance), β is biased.
     """)
@@ -121,11 +121,9 @@ if 'Category' in df.columns:
     selected_cat = st.selectbox("Inspect Category:", cats)
     
     # Fit tiny model for just this cat
-    # Use helper from pricing
-    # Logic: prepare data, filter, fit
+    # Prepare pricing data and fit a model for the selected category.
     
     with st.spinner("Fitting specific model..."):
-        # We'll use the prepare function but force daily agg
         from src.pricing import prepare_pricing_data, interpret_elasticity
         
         # Prepare
@@ -227,7 +225,7 @@ if st.button("Run Classification Analysis (ROC & Stats)"):
         st.markdown("**Model Coefficients & P-Values** (Similar to SAS Enterprise Miner Output)")
         
         # Get stats for the Logistic Regression model
-        # We need to recreate the exact feature set used
+        # Rebuild the feature set used by the selected model.
         feature_cols = X_train.columns.tolist()
         stats_df = get_model_stats(target_df, 'Units Sold', feature_cols)
         

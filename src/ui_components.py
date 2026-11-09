@@ -22,14 +22,8 @@ def render_sidebar_progress():
         if key and key in st.session_state and st.session_state[key] is not None:
              st.sidebar.markdown(f"✅ **{label}**")
         elif key is None:
-             # Just show as list item without check if no strict state key (or check partial)
-             # Let's simple show them as steps
-             # Highlight current page maybe?
+             # Activity status is not tracked in session state.
              pass 
-             # For simpler UX, let's just show completed ones with Check, others as bullet
-             # But we don't know "current page" easily inside this function unless passed
-    
-    # Let's try a more static visuals approach
     
     def status(key):
         return "✅" if (key in st.session_state and st.session_state[key] is not None) else "⬜"
@@ -61,15 +55,9 @@ def render_page_footer(next_page_name, next_page_link, current_status_msg=None):
             st.info(f"ℹ️ {current_status_msg}")
             
     with col2:
-        # Streamlit doesn't have native "Next Page" button easily that switches page programmatically 
-        # without using switch_page from streamlit-extras or hacky links.
-        # We will use a stylistic link/info box.
         st.markdown(f"### Next Step ➡️")
         
-        # Try to construct the relative path assuming standard structure
-        # next_page_link is passed as e.g. "01_Data_Upload"
-        # We need "pages/01_Data_Upload.py" usually
-        
+        # Build the relative path to the selected page.
         page_path = f"pages/{next_page_link}.py"
         if next_page_link == "Home":
              page_path = "Home.py"

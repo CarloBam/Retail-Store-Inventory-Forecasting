@@ -4,13 +4,10 @@ import streamlit as st
 
 def parse_and_load_data(df):
     """
-    Robustly parses the dataframe:
-    - Coerces 'Date' to datetime.
-    - Coerces numeric columns.
-    - Handles errors gracefully.
+    Parse the date and known numeric columns, coercing invalid values.
     """
     # 1. Date Parsing
-    # Try finding a date column if one isn't explicit, but for now strict on 'Date'
+    # Parse the expected Date column when present.
     if 'Date' in df.columns:
         try:
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
@@ -18,7 +15,7 @@ def parse_and_load_data(df):
             st.warning(f"Could not parse 'Date' column: {e}")
     
     # 2. Numeric Coercion
-    # We expect Sales, Price, Inventory to be numeric
+    # Coerce known numeric fields when present.
     numeric_candidates = ['Sales', 'Price', 'Inventory', 'Demand']
     for col in numeric_candidates:
         if col in df.columns:

@@ -43,7 +43,7 @@ def apply_cleaning_pipeline(df, config):
     audit_log.append("--- Missing Value Handling ---")
     target_col = config.get('target_col', 'Units Sold')
     
-    # Drop rows with missing target?
+    # Drop rows with a missing target when enabled.
     if config.get('drop_missing_target', False) and target_col in df_clean.columns:
         initial_rows = len(df_clean)
         df_clean = df_clean.dropna(subset=[target_col])
@@ -86,13 +86,11 @@ def apply_cleaning_pipeline(df, config):
             if method == 'Winsorize':
                 lower = config.get('winsorize_lower', 0.05)
                 upper = config.get('winsorize_upper', 0.95)
-                # Winsorize returns an array, need to assignment back carefully
-                # We use scipy.stats.mstats.winsorize but it changes data in place or returns array
-                # Let's use quantile based clipping manually for clarity
+                # Quantile clipping keeps the result in the DataFrame column.
                 lower_cap = df_clean[col].quantile(lower)
                 upper_cap = df_clean[col].quantile(upper)
                 
-                # Check if we actually modify data
+                # Skip assignment when all values are within the caps.
                 mask_lower = df_clean[col] < lower_cap
                 mask_upper = df_clean[col] > upper_cap
                 if mask_lower.any() or mask_upper.any():

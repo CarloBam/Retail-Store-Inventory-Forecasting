@@ -16,16 +16,6 @@ try:
 except ImportError:
     PROPHET_AVAILABLE = False
 
-try:
-    import tensorflow as tf
-    from tensorflow.keras.models import Sequential
-    from tensorflow.keras.layers import Dense, LSTM
-    # Suppress TF warnings
-    tf.get_logger().setLevel('ERROR')
-    TENSORFLOW_AVAILABLE = True
-except ImportError as e:
-    TENSORFLOW_AVAILABLE = False
-    
 # --- Helpers ---
 
 def prepare_time_series(df, date_col, target_col, agg_freq='D', store_col=None, product_col=None, 
@@ -54,9 +44,7 @@ def prepare_time_series(df, date_col, target_col, agg_freq='D', store_col=None, 
         return None, f"Date column '{date_col}' not found."
     
     # Resample/Aggregate
-    # We aggregate target by sum (e.g. total units) and mean for others if needed
-    # For simplicity, let's focus on the target series
-    # But for models with regressors, we need to agg them too.
+    # Sum the target and aggregate regressors with suitable summaries.
     
     # Aggregation rules
     agg_dict = {target_col: 'sum'}
@@ -246,70 +234,19 @@ def predict_prophet(model, periods, freq='D', future_regressors_df=None):
     try:
         future = model.make_future_dataframe(periods=periods, freq=freq)
         
-        # Merge regressors if needed
+        # Prepare the prediction frame from supplied test-period regressors when available.
         if future_regressors_df is not None:
-             # future df has column 'ds'. future_regressors_df (test set) has date index.
-             # We need to map values.
-             # Simplest: future has length len(train) + periods.
-             # But predict() needs values for ALL rows in future, including history?
-             # Prophet predict() usually just needs rows for which we want predictions, BUT make_future_dataframe includes history by default.
-             # If we only want forecast tail:
-             # But model.predict() output corresponds to future's rows.
-             
-             # Align future_regressors_df to future['ds']
-             # Assuming future_regressors_df index is date
-             
-             # Create a lookup
              reg_df = future_regressors_df.sort_index()
-             
-             # We only need to fill the future part (the tail) because history is already known?
-             # actually Prophet expects regressor columns to be present for ALL rows in 'future'.
-             # For history rows, we assume we don't strictly need them to re-predict history if we only care about tail
-             # BUT Prophet validation might strict check column presence.
-             
-             # Strategy: Left join future with reg_df on date
-             # Note: This implies we have regressor values for the *entire* future period specificed.
-             # In our UI, we use "test" set as future_regressors, which exactly covers the "periods" we ask for.
-             # Checks:
-             freq_str = freq # e.g. 'D'
+             freq_str = freq # Requested forecast frequency.
              
              for col in future_regressors_df.columns:
                  # Check if this col is a regressor in the model
                  if col in model.extra_regressors:
-                     # We need to map it.
-                     # Create a series series indexed by date
-                     # Regressors might need to be filled for history too?
-                     # Prophet stores history regressors. It might handle missing 'future' history regressors if we only look at yhat?
-                     # No, predict() throws error if columns missing.
-                     # Workaround: Initialize col with 0 or NaN
-                     future[col] = 0.0 # Default
-                     
-                     # Fill from future_regressors_df (Test set)
-                     # Map ds to index
-                     # Iterate or map? Map is faster.
-                     # future['ds'] is datetime.
-                     
-                     # Create mapping dict
-                     # Note: future_regressors_df only covers the TEST period.
-                     # We need values for history too if make_future_dataframe includes history (default include_history=True).
-                     # The UI calls predict_prophet with periods=len(test).
-                     # To avoid issues with missing history regressors, we can turn off history in make_future_dataframe?
-                     # But Prophet relies on history for limits?
-                     
-                     # Better approach: We can't easily reconstruct history regressors inside this function unless passed.
-                     # HOWEVER, we can usually predict using just the "future" dataframe starting from now if we simply build it manually 
-                     # instead of using make_future_dataframe which includes history.
-                     
+                     future[col] = 0.0
                      pass
         
-        # New robust logic:
-        # 1. Create future frame EXACTLY for the periods we want (Test set).
-        # We don't need history for this specific prediction task (Validation).
-        
+        # Validation forecasts use the supplied test dates and regressors.
         if future_regressors_df is not None:
-            # Check coverage
-            # If future_regressors_df has the dates we need, use its index
-            # Expecting future_regressors_df to be the 'test' dataframe with Date index
             future_dates = future_regressors_df.index
             future = pd.DataFrame({'ds': future_dates})
             
@@ -318,9 +255,9 @@ def predict_prophet(model, periods, freq='D', future_regressors_df=None):
                 if reg in future_regressors_df.columns:
                     future[reg] = future_regressors_df[reg].values
                 else:
-                    future[reg] = 0.0 # Fallback
+                    future[reg] = 0.0 # Fallback for missing regressors.
         else:
-            # Fallback for no regressors
+            # Generate dates directly when no regressors are required.
             future = model.make_future_dataframe(periods=periods, freq=freq, include_history=False)
         
         forecast = model.predict(future)
@@ -378,9 +315,7 @@ def predict_ml(model_meta, future_df):
         # Check simple presence
         missing = [f for f in feats if f not in future_df.columns]
         if missing:
-             # Try to gracefully fill or error? 
-             # For this demo, let's just warn/return None if critical 
-             # Or fill with 0
+             # Use zero when a future feature is unavailable.
              for m in missing:
                  future_df[m] = 0
         
@@ -395,8 +330,14 @@ def train_lstm(train, target_col, look_back=7, epochs=10, batch_size=1, neurons=
     """
     Trains LSTM model.
     """
-    if not TENSORFLOW_AVAILABLE:
-        return None, "Tensorflow not installed."
+    try:
+        import tensorflow as tf
+        from tensorflow.keras.models import Sequential
+        from tensorflow.keras.layers import Dense, LSTM
+    except ImportError:
+        return None, "tensorflow_unavailable"
+
+    tf.get_logger().setLevel('ERROR')
         
     try:
         data = train[target_col].values

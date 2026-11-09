@@ -50,8 +50,7 @@ with col2:
     sel_prod = st.selectbox("Select Product", prods)
 
 # 2. Baseline Forecast
-# We use Seasonal Naive as a robust, fast baseline for simulation if no advanced model is active
-# Or we could just use historical average. Seasonal Naive is better for "future" feel.
+# Use Seasonal Naive as the baseline when no fitted model is active.
 target_col = 'Units Sold'
 date_col = 'Date'
 
@@ -63,7 +62,7 @@ ts_series = ts_df[target_col]
 
 # Forecast Horizon
 horizon = st.sidebar.slider("Simulation Horizon (Weeks)", 1, 12, 4)
-freq = 'W' # Simulate weekly for stability? Or Daily? Let's check data freq.
+freq = 'W' # Default to weekly; daily history switches the interval below.
 if pd.infer_freq(ts_series.index) == 'D':
     steps = horizon * 7
     freq = 'D'
@@ -139,7 +138,7 @@ new_price = current_price * (1 + price_change_pct/100.0)
 price_effect = elast_est * (price_change_pct / 100.0)
 
 # 2. Competitor Effect (Cross Elasticity)
-# Assume cross elasticity of 0.5 (positive) if not known
+# Use 0.5 as the cross-elasticity assumption when no estimate is available.
 cross_elast = 0.5 
 comp_effect = cross_elast * (competitor_change_pct / 100.0)
 

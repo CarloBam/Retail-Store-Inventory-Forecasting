@@ -199,41 +199,22 @@ if st.button(f"Train {model_choice} & Forecast", type="primary"):
                                                seasonal_order=model_params['seasonal_order'])
             if model_fit:
                 predictions = predict_arima(model_fit, steps=len(test))
-                future_forecast = predict_arima(model_fit, steps=len(test) + forecast_horizon) # Hack: Predict beyond
-                # Actually predict_arima is stateless offset usually, so steps=len(test) gives forecasts for test period starting after train
-                # To get future horizon, we can just ask for more steps from end of train? 
-                # Yes, steps argument in forecast() usually implies steps ahead from end of fit.
-                
-                # Let's get "test predictions" (validation) and "future predictions"
-                # Validation:
-                # In statsmodels, we can use get_forecast or predict(start, end).
-                # model_fit.forecast(steps) starts after end of training.
-                
-                # So `predictions` above covers the 'test' period exactly if steps=len(test)
-                
-                # Future:
+                future_forecast = predict_arima(model_fit, steps=len(test) + forecast_horizon) # Includes test split and requested horizon.
+                # The first forecast covers the test split; the second extends beyond it.
                 future_steps = len(test) + forecast_horizon
                 full_forecast = predict_arima(model_fit, steps=future_steps) 
                 
         elif model_choice == "Prophet":
             model_fit, error_msg = train_prophet(train, target_col, regressors=model_params['regressors'])
             if model_fit:
-                # Prophet needs extra care for regressors in future
-                # For validation (Test period):
-                # Construct future frame that matches test dates
-                # We need features from 'test' dataframe for regressors
-                
-                 # 1. Validation Forecast
-                val_forecast = predict_prophet(model_fit, periods=len(test), freq=freq_map[agg_freq], future_regressors_df=test) # Passing test df as future regressors source
+                 # Forecast the test split using its observed regressor values.
+                val_forecast = predict_prophet(model_fit, periods=len(test), freq=freq_map[agg_freq], future_regressors_df=test) # Test rows provide observed regressor values.
                 if val_forecast is not None:
                      predictions = val_forecast.values
                      
                 # 2. Future Forecast
-                # We don't have known future features beyond test data in this dataset
-                # So we can't truly predict beyond test if we use regressors without making assumptions
-                # For now, let's limit "Future" visualization to just the Validation part for Prophet with Regressors
-                # OR we handle it by not asking for horizon beyond test if regressors are used.
-                full_forecast = val_forecast # Placeholder
+                # Future regressor values are unavailable beyond the test split.
+                full_forecast = val_forecast # Validation-only when regressors are used.
                 if not model_params['regressors']:
                      full_forecast_vals = predict_prophet(model_fit, periods=len(test)+forecast_horizon, freq=freq_map[agg_freq])
                      full_forecast = full_forecast_vals
@@ -243,18 +224,18 @@ if st.button(f"Train {model_choice} & Forecast", type="primary"):
             model_fit, error_msg = train_ml_model(train, target_col, model_type=model_choice)
             if model_fit:
                 predictions = predict_ml(model_fit, test)
-                # Future:
-                # We need features for future.
-                # Assuming simple recursive or static features not available yet for horizon
-                # Warn user
+                # Future forecasts require feature values for the requested horizon.
                 st.warning("Future forecasting for ML models currently requires future feature values. Displaying Test Set validation only.")
-                full_forecast = None # Or implement recursive feature generation if robust
+                full_forecast = None
 
         elif model_choice == "LSTM":
             model_fit, error_msg = train_lstm(train, target_col, 
                                               look_back=model_params['look_back'],
                                               epochs=model_params['epochs'],
                                               neurons=model_params['neurons'])
+            if error_msg == "tensorflow_unavailable":
+                st.warning("The LSTM model is disabled in the hosted demo to keep it lightweight. Run the app locally with TensorFlow installed to use it.")
+                st.stop()
             if model_fit:
                 # Recursive prediction for test set size
                 predictions = predict_lstm(model_fit, steps=len(test))
@@ -317,8 +298,8 @@ if st.button(f"Train {model_choice} & Forecast", type="primary"):
             ax.plot(test.index, s_naive_preds, label='Seasonal Naive', color='green', linestyle=':', alpha=0.7)
             
             # 5. Future Forecast (if available and different)
-            # This is complex to plot neatly if formats differ, let's stick to validation plot heavily
-            # If we calculated 'full_forecast', plot the tail
+            # Plot future predictions when available.
+            # Plot the future forecast tail when available.
             
             ax.set_title(f"{model_choice} vs Baselines: {target_col}")
             ax.legend()

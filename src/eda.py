@@ -10,8 +10,7 @@ def filter_data(df, date_range=None, categories=None, regions=None, stores=None)
     # Date Range
     if date_range:
         start_date, end_date = date_range
-        # Ensure date column exists and is parsed (should represent Session State 'feature_data' or 'cleaned_data')
-        # We assume 'Date' column is present and datetime
+        # Filter by date only when the Date column is available.
         if 'Date' in df_filtered.columns:
             mask = (df_filtered['Date'].dt.date >= start_date) & (df_filtered['Date'].dt.date <= end_date)
             df_filtered = df_filtered[mask]
@@ -25,8 +24,6 @@ def filter_data(df, date_range=None, categories=None, regions=None, stores=None)
     if regions:
         if 'Region' in df_filtered.columns:
             df_filtered = df_filtered[df_filtered['Region'].isin(regions)]
-        # If Region isn't in columns, maybe infer or skip?
-        # Assuming Region is a valid column. If not, this filter does nothing or should warn.
             
     # Stores
     if stores:

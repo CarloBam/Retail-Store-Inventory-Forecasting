@@ -38,7 +38,7 @@ else:
     st.error("No data found. Upload and load data first.")
     st.stop()
 
-# Ensure we have a date column for filtering
+# Require a Date column for time-series analysis.
 date_col = 'Date'
 if date_col not in df.columns:
     st.error("Dataset missing 'Date' column. Cannot proceed with Time Series EDA.")
@@ -72,11 +72,7 @@ if not selected_years:
     st.sidebar.error("Please select at least one year.")
     st.stop()
 
-# Filter by selected years implicitly through date range check? 
-# OR explicit filter. Explicit is better for "Compare Years" mode.
-# Let's filter df by years first, then apply date range if it overlaps?
-# Actually user request was "add filter by year... show each year".
-# Standard flow: Filter data down to these years.
+# Restrict analysis to selected years before applying other filters.
 df = df[df[date_col].dt.year.isin(selected_years)]
 
 # Categories

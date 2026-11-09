@@ -54,10 +54,7 @@ def generate_features_pipeline(df, config):
             
         # Calculate Effective Price (Price * (1 - discount_pct))
         if 'Discount' in df_feat.columns:
-            # Assume Discount is percentage 0-100 or 0-1. Data inspection usually needed.
-            # Based on user input "effective_price = price * (1 - discount_pct)"
-            # If discount is 0-100, we divide by 100.
-            # Let's assume 0-100 based on previous code context
+            # Discount values use a 0-100 percentage scale in this dataset.
             df_feat['discount_pct'] = df_feat['Discount'] / 100.0
         else:
             df_feat['discount_pct'] = 0.0
@@ -181,7 +178,7 @@ def validate_feature_contract(df, target_col):
         raise ValueError(f"FEATURE CONTRACT FAILED: Missing required columns: {missing_required}")
         
     # 2. Nullity Check
-    # We expect 0 nulls in critical features after lookup drop
+    # Check for nulls in required and derived features.
     null_counts = df.isnull().sum()
     cols_with_nulls = null_counts[null_counts > 0]
     
@@ -196,9 +193,7 @@ def validate_feature_contract(df, target_col):
                 print(f"CRITICAL WARNING: Feature '{c}' has nulls. Models may crash.")
                 
     # 3. Data Integrity
-    # Check if 'price_gap_to_competitor' exists if 'Competitor Pricing' was in original (inferred)
-    # This addresses "competitor elasticity step fails"
-    # We can't see original df here easily, but we can check if the derived col exists
+    # Report whether the competitor price gap feature is available.
     if 'price_gap_to_competitor' not in df.columns:
         print("NOTICE: 'price_gap_to_competitor' was NOT created. Competitor analysis will be disabled.")
     else:

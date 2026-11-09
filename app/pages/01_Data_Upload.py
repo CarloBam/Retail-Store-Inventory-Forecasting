@@ -70,9 +70,7 @@ else:
                          st.caption("✅ Date column parsed successfully.")
                     
                     # Compute initial missingness for summary
-                    # We DO NOT save to session state yet until Confirmed? 
-                    # Actually, usually better to save immediately so re-runs don't lose it, 
-                    # but maybe mark as "unconfirmed". For this UX, let's just save it.
+                    # Save the parsed upload so it persists across Streamlit reruns.
                     st.session_state['raw_data'] = df_parsed
                     st.session_state['df_raw'] = df_parsed
                     st.toast("Upload successful!", icon="✅")

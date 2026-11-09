@@ -68,9 +68,7 @@ def create_pdf_report(df, insights, recommendations):
         pdf.ln(2)
         
     # Output
-    # FPDF output to string then bytes? Or directly to file?
-    # output(dest='S') returns string (latin-1). 
-    # Try generic approach for bytes
+    # Convert FPDF's Latin-1 string output to bytes.
     try:
         return pdf.output(dest='S').encode('latin-1')
     except:

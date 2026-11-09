@@ -41,7 +41,7 @@ def train_classification_models(df, target_col='Units Sold', feature_cols=None):
     models = {}
     
     # Logistic Regression (Standardized for easier convergence)
-    # We use statsmodels for nice P-values later, but sklearn for prediction consistency in loops
+    # Statsmodels provides p-values; scikit-learn keeps predictions consistent across model loops.
     lr = LogisticRegression(max_iter=1000)
     lr.fit(X_train, y_train)
     models['Logistic Regression'] = lr

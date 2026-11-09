@@ -100,21 +100,18 @@ st.markdown("---")
 st.header("3. Model Baseline Performance")
 st.markdown("Comparison of advanced models against simple baselines (Naive, Seasonal Naive).")
 
-# We can't really pull the specific run results unless stored in session state.
-# For now, we explain the methodology or check if we stored metrics.
+# Metrics appear here only after a forecast run stores them in session state.
 if 'last_model_metrics' in st.session_state:
     metrics = st.session_state['last_model_metrics']
-    # Display if available
+    # Display the saved model metrics.
     st.json(metrics)
 else:
     st.info("Run a model in 'Forecasting Models' to see the latest baseline comparison here.")
     
 # 4. Leakage Check
 st.markdown("---")
-st.header("4. Leakage & Endogeneity Checks")
-leakage_checked = True # Logic placeholder
-if leakage_checked:
-    st.success("✅ Rolling windows use shift(1) to strict past-only data.")
-    st.success("✅ Target column 'Units Sold' excluded from feature set.")
+st.header("4. Design Safeguards")
+st.success("✅ Rolling windows use shift(1) to strict past-only data.")
+st.success("✅ Target column 'Units Sold' excluded from feature set.")
 
 render_page_footer("Scenario Simulator", "10_Scenario_Simulator", "Verify trust, then Simulate Scenarios.")

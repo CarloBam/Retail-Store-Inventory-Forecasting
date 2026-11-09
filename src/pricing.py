@@ -5,7 +5,7 @@ import statsmodels.formula.api as smf
 
 def prepare_pricing_data(df, config):
     """
-    Prepares data for pricing analysis ensuring robust log transformations and handling zeros.
+    Prepares pricing data, filters invalid values, and creates log variables.
     Separates prediction logic from structural interpretation.
     """
     df_model = df.copy()
@@ -52,18 +52,11 @@ def prepare_pricing_data(df, config):
         df_model = df_model.set_index(date_col).resample('W').agg(agg_dict).dropna().reset_index()
     
     # 5. Log Transforms
-    # Handle zeros: log1p is safer for units, but for price, if 0 it's invalid.
-    # Filter invalid prices
+    # Log transforms require positive prices and sales; zero-sales rows can reflect stockouts or closures.
     price_col = 'effective_price' if 'effective_price' in df_model.columns else 'Price'
     df_model = df_model[df_model[price_col] > 0]
     
-    # Use log1p for demand to handle natural zeros (days with 0 sales)
-    # However, log(0) is -inf, log1p(0) is 0. 
-    # For elasticity: ln(Q) = beta * ln(P). If Q=0, log is undefined.
-    # Approach: Shifted log or remove zeros.
-    # Recommendation: Filter out absolute zero demand days for elasticity estimation 
-    # as they likely represent stockouts or closed stores, not price response.
-    # kept > 0 for structural estimation.
+        # Exclude zero-sales rows because log demand is undefined.
     df_model = df_model[df_model['Units Sold'] > 0]
     
     df_model['log_demand'] = np.log(df_model['Units Sold'])
@@ -109,8 +102,8 @@ def fit_elasticity_model(df, category_col='Category', fixed_effects=[], robust_c
         base_formula = "log_demand ~ log_price"
         
         # Controls
-        controls = ['Holiday', 'Seasonality', 'Month', 'weather_cluster'] # removed promo_flag from base controls if we segment by it? No, keep for overall.
-        # Actually for overall model we need promo_flag
+        controls = ['Holiday', 'Seasonality', 'Month', 'weather_cluster'] # Legacy control candidates; active controls are selected below.
+        # Include promotion when available in the overall model.
         overall_formula = base_formula
         control_vars = []
         possible_controls = ['promo_flag', 'Holiday', 'discount_pct', 'Month', 'Seasonality']
@@ -188,10 +181,7 @@ def run_placebo_test(df, category_col='Category'):
         sub_df = df if cat == 'All' else df[df[category_col] == cat]
         sub_df = sub_df.copy() # Avoid SettingWithCopy
         
-        # Create Lead Price (Future Price)
-        # We need to group by product/store to shift correctly if mixed
-        # Assuming prepare_pricing_data output might be aggregated.
-        # If it's Store-Product grain:
+        # Shift prices within product-store series when both identifiers are available.
         if 'Store ID' in sub_df.columns and 'Product ID' in sub_df.columns:
             sub_df['future_log_price'] = sub_df.groupby(['Store ID', 'Product ID'])['log_price'].shift(-1)
         else:

@@ -15,7 +15,7 @@ def plot_seasonal_trends(df, date_col='Date', value_col='Units Sold', title='Yea
 
     df_plot['Year'] = df_plot[date_col].dt.year.astype(str)
     # Create a CommonDate for plotting (Year 2020)
-    # We construct it string-wise or using replacement to avoid leap year issues causing drop
+    # Map dates to leap year 2020 so month-day positions align.
     df_plot['CommonDate'] = df_plot[date_col].apply(lambda x: x.replace(year=2020))
     
     # Aggregate to daily level to avoid huge scatter

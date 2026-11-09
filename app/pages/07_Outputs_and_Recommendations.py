@@ -36,7 +36,7 @@ if 'Category' not in df.columns:
     st.stop()
 
 # --- Helpers to Generate Insights on the Fly ---
-# We re-run lightweight models to ensure freshness without requiring user to visit previous pages first
+# Refit lightweight models so this page works without prior page visits.
 
 @st.cache_data
 def get_strategic_insights(df):
@@ -49,8 +49,7 @@ def get_strategic_insights(df):
     elast_df = fit_elasticity_model(df_price, category_col='Category', fixed_effects=['Store', 'Region'])
     
     if not elast_df.empty:
-        # Elastic (-inf to -1) -> Sensitive -> Opportunity to lower price to gain share? Or risky to raise.
-        # Inelastic (-1 to 0) -> Insensitive -> Opportunity to raise price for revenue.
+        # Elasticity below -1 indicates elastic demand; values from -1 to 0 indicate inelastic demand.
         
         insights['elastic_df'] = elast_df
         insights['top_elastic'] = elast_df[elast_df['Elasticity'] < -1].sort_values('Elasticity')
@@ -253,7 +252,7 @@ with col_ex3:
     try:
         from src.reporting import create_ppt_presentation
         
-        # We need to pass the dataframe, insights, and recommendations
+        # Pass the current data and computed recommendations to the report generator.
         # insights and recommendations are already computed above
         
         ppt_buffer = create_ppt_presentation(df, insights, recommendations)

@@ -121,7 +121,7 @@ with c_sim1:
         
         # Get baseline stats for that category
         # Recalculate based on prepared data model not full raw
-        # Actually logic is fine as approximation
+        # Use category-level averages as the simulation baseline.
         base_df = df_model[df_model['Category'] == sim_cat] if 'Category' in df_model.columns else df_model
         curr_price = base_df['Price'].mean()
         curr_units = base_df['Units Sold'].mean() # Average per period (Day/Week)
